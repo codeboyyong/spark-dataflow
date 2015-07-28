@@ -15,6 +15,11 @@
 
 package com.cloudera.dataflow.spark;
 
+import static com.cloudera.dataflow.spark.ShardNameBuilder.getOutputDirectory;
+import static com.cloudera.dataflow.spark.ShardNameBuilder.getOutputFilePrefix;
+import static com.cloudera.dataflow.spark.ShardNameBuilder.getOutputFileTemplate;
+import static com.cloudera.dataflow.spark.ShardNameBuilder.replaceShardCount;
+
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.util.Arrays;
@@ -22,6 +27,30 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.avro.mapred.AvroKey;
+import org.apache.avro.mapreduce.AvroJob;
+import org.apache.avro.mapreduce.AvroKeyInputFormat;
+import org.apache.avro.mapreduce.AvroKeyOutputFormat;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.HBaseConfiguration;
+import org.apache.hadoop.hbase.client.Result;
+import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
+import org.apache.hadoop.hbase.mapreduce.TableInputFormat;
+import org.apache.hadoop.io.NullWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.spark.api.java.JavaPairRDD;
+import org.apache.spark.api.java.JavaRDD;
+import org.apache.spark.api.java.JavaRDDLike;
+import org.apache.spark.api.java.JavaSparkContext;
+import org.apache.spark.api.java.function.Function;
+import org.apache.spark.api.java.function.Function2;
+import org.apache.spark.api.java.function.PairFunction;
+
+import scala.Tuple2;
+
+import com.cloudera.dataflow.extension.io.HBaseIO;
+import com.cloudera.dataflow.hadoop.HadoopIO;
 import com.google.api.client.util.Maps;
 import com.google.cloud.dataflow.sdk.coders.CannotProvideCoderException;
 import com.google.cloud.dataflow.sdk.coders.Coder;
@@ -46,29 +75,6 @@ import com.google.cloud.dataflow.sdk.values.PCollectionView;
 import com.google.cloud.dataflow.sdk.values.TupleTag;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
-import org.apache.avro.mapred.AvroKey;
-import org.apache.avro.mapreduce.AvroJob;
-import org.apache.avro.mapreduce.AvroKeyInputFormat;
-import org.apache.avro.mapreduce.AvroKeyOutputFormat;
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.io.NullWritable;
-import org.apache.hadoop.io.Text;
-import org.apache.hadoop.mapreduce.Job;
-import org.apache.spark.api.java.JavaPairRDD;
-import org.apache.spark.api.java.JavaRDD;
-import org.apache.spark.api.java.JavaRDDLike;
-import org.apache.spark.api.java.JavaSparkContext;
-import org.apache.spark.api.java.function.Function;
-import org.apache.spark.api.java.function.Function2;
-import org.apache.spark.api.java.function.PairFunction;
-import scala.Tuple2;
-
-import static com.cloudera.dataflow.spark.ShardNameBuilder.getOutputDirectory;
-import static com.cloudera.dataflow.spark.ShardNameBuilder.getOutputFilePrefix;
-import static com.cloudera.dataflow.spark.ShardNameBuilder.getOutputFileTemplate;
-import static com.cloudera.dataflow.spark.ShardNameBuilder.replaceShardCount;
-
-import com.cloudera.dataflow.hadoop.HadoopIO;
 
 /**
  * Supports translation between a DataFlow transform, and Spark's operations on RDDs.
@@ -491,6 +497,7 @@ public final class TransformTranslator {
       public void evaluate(HadoopIO.Read.Bound<K, V> transform, EvaluationContext context) {
         String pattern = transform.getFilepattern();
         JavaSparkContext jsc = context.getSparkContext();
+    
         @SuppressWarnings ("unchecked")
         JavaPairRDD<K, V> file = jsc.newAPIHadoopFile(pattern,
             transform.getFormatClass(),
@@ -507,6 +514,53 @@ public final class TransformTranslator {
     };
   }
 
+
+  private static  TransformEvaluator<HBaseIO.Read.Bound>  readHBase () {
+     return new TransformEvaluator<HBaseIO.Read.Bound>() {
+      /**
+		 * 
+		 */
+		private static final long serialVersionUID = 1L;
+
+	@Override
+      public void evaluate(HBaseIO.Read.Bound  transform, EvaluationContext context) {
+         String tableName = transform.getTableName();
+         Configuration conf = HBaseConfiguration.create();
+        	    // Add local HBase conf
+        //conf.addResource(new Path("file:///opt/mapr/hbase/hbase-0.94.17/conf/hbase-site.xml"))
+         conf.set(TableInputFormat.INPUT_TABLE, tableName);
+         String[] zkConn = transform.getZkConnection().split(":");
+          conf.set("hbase.zookeeper.quorum",zkConn[0]);
+         conf.set("hbase.zookeeper.property.clientPort",zkConn[1]);
+         
+          JavaSparkContext jsc = context.getSparkContext();
+          
+         JavaPairRDD<ImmutableBytesWritable, Result> rdd = jsc.newAPIHadoopRDD(conf, TableInputFormat.class, 
+        	       org.apache.hadoop.hbase.io.ImmutableBytesWritable.class ,
+        	       org.apache.hadoop.hbase.client.Result.class );
+        	      
+ 
+        JavaRDD<String[]> rddx = rdd.map(new Function<Tuple2<ImmutableBytesWritable, Result>, String[]>() {
+			private static final long serialVersionUID = -5947297712561334213L;
+
+		@Override
+          public String[] call(Tuple2<ImmutableBytesWritable, Result> t2) throws Exception {
+            String[] res = new String(t2._2.getValue(family, qualifier).getRow()).split(",");
+            System.out.println("Result= " + t2._2);
+            System.out.println("res= " + res );
+            return res ;
+          }
+        });
+        
+        
+        
+        
+        context.setOutputRDD(transform, rddx);
+      }
+    };
+  }
+  
+  
   private static <T> TransformEvaluator<Window.Bound<T>> window() {
     return new TransformEvaluator<Window.Bound<T>>() {
       @Override
@@ -617,6 +671,8 @@ public final class TransformTranslator {
     EVALUATORS.put(AvroIO.Read.Bound.class, readAvro());
     EVALUATORS.put(AvroIO.Write.Bound.class, writeAvro());
     EVALUATORS.put(HadoopIO.Read.Bound.class, readHadoop());
+    EVALUATORS.put(HBaseIO.Read.Bound.class, readHBase());
+
     EVALUATORS.put(ParDo.Bound.class, parDo());
     EVALUATORS.put(ParDo.BoundMulti.class, multiDo());
     EVALUATORS.put(GroupByKey.GroupByKeyOnly.class, gbk());

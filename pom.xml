@@ -50,7 +50,7 @@ License.
                         <reuseForks>false</reuseForks>
                     </configuration>
                 </plugin>
-                <plugin>
+                <!--<plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-checkstyle-plugin</artifactId>
                     <version>2.15</version>
@@ -67,7 +67,7 @@ License.
                             </goals>
                         </execution>
                     </executions>
-                </plugin>
+                </plugin> -->
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-source-plugin</artifactId>
@@ -275,17 +275,33 @@ License.
     </build>
 
     <dependencies>
+        	<dependency>
+			<groupId>org.apache.hbase</groupId>
+			<artifactId>hbase-client</artifactId>
+			<version>0.98.13-hadoop2</version>
+		</dependency>
+		 <dependency>
+			<groupId>org.apache.hbase</groupId>
+			<artifactId>hbase-common</artifactId>
+			<version>0.98.13-hadoop2</version>
+		</dependency>
+	 <dependency>
+			<groupId>org.apache.hbase</groupId>
+			<artifactId>hbase-server</artifactId>
+			<version>0.98.13-hadoop2</version>
+		</dependency>
+  
         <dependency>
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-core_2.10</artifactId>
             <version>${spark.version}</version>
             <scope>provided</scope>
         </dependency>
-        <dependency>
+        <!--dependency>
             <groupId>com.google.guava</groupId>
             <artifactId>guava</artifactId>
             <version>18.0</version>
-        </dependency>
+        </dependency-->
         <dependency>
             <groupId>com.google.cloud.dataflow</groupId>
             <artifactId>google-cloud-dataflow-java-sdk-all</artifactId>
@@ -298,18 +314,19 @@ License.
                 </exclusion>
             </exclusions>
         </dependency>
-        <dependency>
+       <!--   <dependency>
             <groupId>com.google.cloud.dataflow</groupId>
             <artifactId>google-cloud-dataflow-java-examples-all</artifactId>
             <version>${google-cloud-dataflow-version}</version>
             <exclusions>
-                <!-- Use Hadoop/Spark's backend logger -->
+                <!x  Use Hadoop/Spark's backend logger  
                 <exclusion>
                     <groupId>org.slf4j</groupId>
                     <artifactId>slf4j-jdk14</artifactId>
                 </exclusion>
-            </exclusions>
-        </dependency>
+            </exclusions>      
+        </dependency>  Caused by: java.lang.IllegalAccessError: tried to access method com.google.common.base.Stopwatch.<init>()V from class org.apache.hadoop.hbase.zookeeper.MetaTableLocator
+          -->
         <dependency>
             <groupId>org.apache.avro</groupId>
             <artifactId>avro-mapred</artifactId>
